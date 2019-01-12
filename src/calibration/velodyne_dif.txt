@@ -1,0 +1,33 @@
+@@ -72,9 +72,9 @@ namespace velodyne_pointcloud
+ #endif
+     else
+       correction.second.two_pt_correction_available = false;
+-    node[DIST_CORRECTION_X] >> correction.second.dist_correction_x;
+-    node[DIST_CORRECTION_Y] >> correction.second.dist_correction_y;
+-    node[VERT_OFFSET_CORRECTION] >> correction.second.vert_offset_correction;
++    if(node[DIST_CORRECTION_X]) node[DIST_CORRECTION_X] >> correction.second.dist_correction_x;
++    if(node[DIST_CORRECTION_Y]) node[DIST_CORRECTION_Y] >> correction.second.dist_correction_y;
++    if(node[VERT_OFFSET_CORRECTION]) node[VERT_OFFSET_CORRECTION] >> correction.second.vert_offset_correction;
+ #ifdef HAVE_NEW_YAMLCPP
+     if (node[HORIZ_OFFSET_CORRECTION])
+       node[HORIZ_OFFSET_CORRECTION] >>
+@@ -104,7 +104,6 @@ namespace velodyne_pointcloud
+     else {
+       correction.second.max_intensity = 255;
+     }
+-
+     const YAML::Node * min_intensity_node = NULL;
+ #ifdef HAVE_NEW_YAMLCPP
+     if (node[MIN_INTENSITY]) {
+@@ -123,8 +122,8 @@ namespace velodyne_pointcloud
+     else {
+       correction.s econd.min_intensity = 0;
+     }
+-    node[FOCAL_DISTANCE] >> correction.second.focal_distance;
+-    node[FOCAL_SLOPE] >> correction.second.focal_slope;
++    if(node[FOCAL_DISTANCE]) node[FOCAL_DISTANCE] >> correction.second.focal_distance;
++    if(node[FOCAL_SLOPE]) node[FOCAL_SLOPE] >> correction.second.focal_slope;
+ 
+     // Calculate cached values
+     correction.second.cos_rot_correction =
+
