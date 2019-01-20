@@ -129,11 +129,15 @@ include_directories(
   ${catkin_INCLUDE_DIRS}
   ${PCL_INCLUDE_DIRS}
   ${OpenCV_INCLUDE_DIRS}
+  /usr/local/include/swiftnav
 )
-add_definitions(${PCL_DEFINITIONS})
+
 link_directories(  ${PCL_LIBRARY_DIRS}
     ${OpenCV_LIBRARY_DIRS}
-    ${catkin_LIBRARY_DIRS})
+    ${catkin_LIBRARY_DIRS}
+    /usr/local/include/swiftnav
+    /usr/lib/)
+add_definitions(${PCL_DEFINITIONS})
  #add_library(A STATIC src/scan_analyser.cpp src/scan_analyser_node.cpp /home/jie/catkin_ws/src/velodyne/velodyne_pointcloud/src/conversions/pointcloudXYZIR.cc)
  #link_directories( /jie/home/catkin_ws/src/)
  #target_link_libraries(A)
@@ -166,11 +170,12 @@ add_executable(${PROJECT_NAME}_node src/scan_analyser_node.cpp src/scan_analyser
 
 ## Specify libraries to link a library or executable target against
  target_link_libraries(${PROJECT_NAME}_node
-  ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBRARIES}
+  ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBRARIES} /usr/local/lib/libswiftnav.a
  )
 target_link_libraries(${PROJECT_NAME}_node ${catkin_LIBRARIES})
-target_link_libraries(${PROJECT_NAME}_node ${PCL_COMMON_LIBRARIES} ${PCL_IO_LIBRARIES})
+target_link_libraries(${PROJECT_NAME}_node ${PCL_LIBRARIES})
 target_link_libraries(${PROJECT_NAME}_node ${OpenCV_LIBS} )
+target_link_libraries(${PROJECT_NAME}_node /usr/local/lib/libswiftnav.a )
 #############
 ## Install ##
 #############

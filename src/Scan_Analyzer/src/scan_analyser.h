@@ -14,24 +14,33 @@
 #include <pcl_conversions/pcl_conversions.h>
 #include "nav_msgs/Odometry.h"
 #include <tf/transform_datatypes.h>
-#define DEBUGGING true
+#include <pcl_ros/impl/transforms.hpp>
+#include <pcl/io/ply_io.h>
+#include <pcl_conversions/pcl_conversions.h>
+#include <pcl/point_types.h>
+#define DEBUGGING false
 class Scan_Analyser
 {
 public:
     ros::Time received_time_stamp;
     ros::Subscriber time_stamp_sub;
-    ros::Subscriber velodyne_scan_sub;
+    ros::Subscriber velodyne_scan_sub;// for the pointcloud sub, no accurate time info from header.stamp.
+    // @ref: http://docs.pointclouds.org/1.8.1/structpcl_1_1_p_c_l_header.html#a7ccf28ecce53332cd572d1ba982a4579
+    ros::Subscriber raw_veloscan_sub; // used to get the time undirectly, rather than ros::Time::now();
     ros::Publisher transformed_pc_pub;
-
+    pcl::PCDWriter writer;
     //temperary use pcl
-    ros::Time time_diff;
-    pcl::PointCloud<pcl::PointXYZ> pcl;
+    ros::Duration time_diff_traj;// time_diff only used for calculating the passed time
+    ros::Duration time_diff_ros;
+    ros::Time actual_time; // get time from header of velodyneScan msg
+    ros::Time last_inMsg_timestamp;
+//    pcl::PointCloud<pcl::PointXYZ> pcl_tmp;
     // trajectories from MMS
     std::map<double,std::vector<double>> trajectories;
 public:
     Scan_Analyser(ros::NodeHandle nh);
     sensor_msgs::PointCloud2 transform_cloud(const tf::Transform T, const sensor_msgs::PointCloud2 &msg);
-    void scanner_callback(const velodyne_msgs::VelodyneScan &scan_msg);
+    void scanner_callback(const velodyne_rawdata::VPointCloud::ConstPtr& inMsg);
     void time_sync_callback(const std_msgs::Float64 &time_sync_msg);
     void convert_3d_lidar(velodyne_msgs::VelodyneScan v_scan,nav_msgs::Odometry gps_pose);
     const std::vector<std::string> split(std::string& s, const std::string chars);
@@ -40,7 +49,8 @@ public:
     double my_stod(std::string& s);
     std::pair<double,double> closest(std::vector<double> const& vec, double value);
     tf::Transform generate_tf_matrix(std::vector<double> &params);
-   virtual ~Scan_Analyser();
+    void indirect_time_callback(const velodyne_msgs::VelodyneScan& msg);
+    virtual ~Scan_Analyser();
 };
 
 #endif // SCAN_ANALYSER_H

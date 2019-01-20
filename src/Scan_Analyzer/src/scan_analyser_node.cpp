@@ -6,7 +6,7 @@ int main(int argc, char **argv)
   ros::init(argc, argv, "scan_analyser_node");
   ros::NodeHandle nh;
   Scan_Analyser ana =  Scan_Analyser(nh);
-
+  ros::spin();
 
 
 }
