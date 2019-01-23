@@ -34,9 +34,9 @@ Changed line 17-18 of pointcloudXYZIR.cc to add the info of azimuth, which used 
 
 Changed line 32-34 of point_types.h to add definition of azimuth, distance, and timestamp
 
-+    uint16_t azimuth;                   ///< 0-35999, divide by 100 to get degrees
++    uint16_t azimuth;                   ///< 0-35999>, divide by 100 to get degrees
 +    float distance;
-+    time_t timestamp;                   ///< timestamp used for syncronization
++    time_t timestamp;                   ///< timestamp> used for syncronization
 
 # Magic Notes
 
