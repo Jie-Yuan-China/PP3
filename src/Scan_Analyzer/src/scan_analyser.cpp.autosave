@@ -66,7 +66,7 @@ void Scan_Analyser::scanner_callback(const velodyne_rawdata::VPointCloud::ConstP
             pcl_ros::transformPointCloud(sliced_cloud,transformed_cloud,T);
             current_cloud += transformed_cloud;
         }
-        writer.write("test_save.pcd",current_cloud);
+//        writer.write("test_save.pcd",current_cloud);
         sensor_msgs::PointCloud2 output_msg;
         pcl::toROSMsg(current_cloud,output_msg);
         output_msg.header.frame_id = "velodyne";

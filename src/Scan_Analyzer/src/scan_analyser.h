@@ -30,11 +30,8 @@ public:
     ros::Publisher transformed_pc_pub;
     pcl::PCDWriter writer;
     //temperary use pcl
-    ros::Duration time_diff_traj;// time_diff only used for calculating the passed time
-    ros::Duration time_diff_ros;
-    ros::Time actual_time; // get time from header of velodyneScan msg
-    ros::Time last_inMsg_timestamp;
-//    pcl::PointCloud<pcl::PointXYZ> pcl_tmp;
+    ros::Time actual_timestamp; // get time from header of velodyneScan msg
+    ros::Time last_timestamp;
     // trajectories from MMS
     std::map<double,std::vector<double>> trajectories;
 public:
@@ -42,14 +39,12 @@ public:
     sensor_msgs::PointCloud2 transform_cloud(const tf::Transform T, const sensor_msgs::PointCloud2 &msg);
     void scanner_callback(const velodyne_rawdata::VPointCloud::ConstPtr& inMsg);
     void time_sync_callback(const std_msgs::Float64 &time_sync_msg);
-    void convert_3d_lidar(velodyne_msgs::VelodyneScan v_scan,nav_msgs::Odometry gps_pose);
     const std::vector<std::string> split(std::string& s, const std::string chars);
     void read_MMS_trajectory(std::string path);
     std::vector<double> interpolate_pose(double &time);
     double my_stod(std::string& s);
     std::pair<double,double> closest(std::vector<double> const& vec, double value);
     tf::Transform generate_tf_matrix(std::vector<double> &params);
-    void indirect_time_callback(const velodyne_msgs::VelodyneScan& msg);
     virtual ~Scan_Analyser();
 };
 
