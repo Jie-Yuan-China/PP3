@@ -28,10 +28,12 @@ public:
     // @ref: http://docs.pointclouds.org/1.8.1/structpcl_1_1_p_c_l_header.html#a7ccf28ecce53332cd572d1ba982a4579
     ros::Subscriber raw_veloscan_sub; // used to get the time undirectly, rather than ros::Time::now();
     ros::Publisher transformed_pc_pub;
-    pcl::PCDWriter writer;
+    pcl::PLYWriter writer;
+    std::vector<double> time_stamps_mms;
     //temperary use pcl
     ros::Time actual_timestamp; // get time from header of velodyneScan msg
     ros::Time last_timestamp;
+    uint32_t traj_idx;// to improve the efficiency of searching traj
     // trajectories from MMS
     std::map<double,std::vector<double>> trajectories;
 public:
@@ -40,7 +42,7 @@ public:
     void scanner_callback(const velodyne_rawdata::VPointCloud::ConstPtr& inMsg);
     void time_sync_callback(const std_msgs::Float64 &time_sync_msg);
     const std::vector<std::string> split(std::string& s, const std::string chars);
-    void read_MMS_trajectory(std::string path);
+    void load_MMS_trajectory(std::string path);
     std::vector<double> interpolate_pose(double &time);
     double my_stod(std::string& s);
     std::pair<double,double> closest(std::vector<double> const& vec, double value);

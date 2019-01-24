@@ -20,19 +20,22 @@ extern "C" {
 #include "swiftnav/gnss_time.h"
 }
 #include "velodyne_pointcloud/rawdata.h"
-
+#include "tf/transform_datatypes.h"
+#include "Eigen/Core"
+#include "Eigen/Geometry"
 Scan_Analyser::Scan_Analyser(ros::NodeHandle nh)
 {   //diff time for debuging
-    time_t traj_start_time = gps2time(new gps_time_t {308729.418746,2035});
+    time_t traj_start_time = gps2time(new gps_time_t {308729.418746,2037});
     double time_diff_traj = 1548250178.232908 - traj_start_time;
     ROS_INFO("%f has passed since the measurement.",time_diff_traj);
 
     //load the traj data
-    std::string path = "/home/jie/catkin_ws/data/trajectory (another copy).txt";
-    read_MMS_trajectory( path );
+    std::string path = "/home/jie/catkin_ws/data/trajectory_calenbergerneustadt.txt";
+    traj_idx = 0;
+    load_MMS_trajectory( path );
     // add the subscriber and publisher
     time_stamp_sub= nh.subscribe("/trigger_timestamps", 1, &Scan_Analyser::time_sync_callback,this);
-    velodyne_scan_sub = nh.subscribe("/velodyne_points",10,&Scan_Analyser::scanner_callback,this);
+    velodyne_scan_sub = nh.subscribe("/velodyne_points",1,&Scan_Analyser::scanner_callback,this);
     transformed_pc_pub = nh.advertise<sensor_msgs::PointCloud2>("/velo_transformed",1);
 
 }
@@ -43,40 +46,36 @@ Scan_Analyser::~Scan_Analyser(){
 void Scan_Analyser::scanner_callback(const velodyne_rawdata::VPointCloud::ConstPtr& inMsg){
     if (!actual_timestamp.isZero() && !last_timestamp.isZero()){
         ROS_INFO("start processing current cloud");
-        ros::Time begin = ros::Time::now();
+        ros::Time begin_stamp = ros::Time::now();
+
         std::cout<<"size of points of this msg: "<<inMsg->points.size()<<std::endl;
         pcl::PointCloud<pcl::PointXYZI> current_cloud;
+        std::map<uint16_t,tf::Transform> transform_map;
         for(uint16_t i = 0; i < 36000; i++){
-            pcl::PointCloud<pcl::PointXYZI> sliced_cloud;
-            for(auto pt:inMsg->points){
-                if(pt.azimuth == i){
-                    pcl::PointXYZI target_pt;
-                    target_pt.x = pt.x;
-                    target_pt.y = pt.y;
-                    target_pt.z = pt.z;
-                    target_pt.intensity = pt.intensity;
-            //ROS_INFO("Pt info %f,%f,%f,%f", pt.x,pt.y,pt.z,pt.intensity);
-                    sliced_cloud.push_back(target_pt);
-                }
-            }
             double current_scan_time = last_timestamp.toSec() + i * (actual_timestamp.toSec()-last_timestamp.toSec())/36000;
             std::vector<double> params = interpolate_pose(current_scan_time);
             tf::Transform T = generate_tf_matrix(params);
-            pcl::PointCloud<pcl::PointXYZI> transformed_cloud;
-            pcl_ros::transformPointCloud(sliced_cloud,transformed_cloud,T);
-            current_cloud += transformed_cloud;
+            transform_map[i] = T;
         }
-        writer.write("test_save.pcd",current_cloud);
+        for(auto pt:inMsg->points){
+            tf::Vector3 pt_transformed = transform_map[pt.azimuth] * tf::Vector3(pt.x,pt.y,pt.z);
+            pcl::PointXYZI target_pt;
+            target_pt.x = pt_transformed.getX();
+            target_pt.y = pt_transformed.getY();
+            target_pt.z = pt_transformed.getZ();
+            target_pt.intensity = pt.intensity;
+            current_cloud.push_back(target_pt);
+        }
         sensor_msgs::PointCloud2 output_msg;
         pcl::toROSMsg(current_cloud,output_msg);
         output_msg.header.frame_id = "velodyne";
         transformed_pc_pub.publish(output_msg);
-        ROS_INFO("//////Processing used %f seconds",ros::Time::now().toSec()-begin.toSec());
+        ROS_INFO("//////Processing used %f seconds",ros::Time::now().toSec()-begin_stamp.toSec());
+        if (writer.write("/home/jie/testsave.ply", current_cloud, false, false) != 0) {
+          ROS_ERROR("Something went wrong when trying to write the point cloud file.");
+          return;
+    }
         ROS_INFO("####################Split line####################");
-
-        // @TODO add a interpolated timestamp to every pointcloud using the timestamp from the header as reference,
-        // then take all points with same azimuth, cal the time when the laserscanner scans at the specific azimuth, then output as the pointcloud.
-        // think about how to debug this part. then how to improve the speed.
 
     }
 
@@ -90,20 +89,10 @@ void Scan_Analyser::time_sync_callback(const std_msgs::Float64 &time_sync_msg){
 }
 std::vector<double> Scan_Analyser::interpolate_pose(double &time){
     std::vector<double> params;
-    // todo use the std::lower_bound and std::lower_bound to find the nearst timestamp
-    // todo map all possible value in the trajctory
-    std::vector<double> time_stamps_mms;
-    std::map<double,std::vector<double>>::iterator it;
-    for (it = trajectories.begin(); it != trajectories.end(); ++it ){
-        time_stamps_mms.push_back(it->first);
-    }
+
     std::pair <double,double> time_pair = closest(time_stamps_mms, time);
-
-
-
     std::vector<double> param_before = trajectories[time_pair.first];
     std::vector<double> param_after = trajectories[time_pair.second];
-
     if (param_before.empty() || param_after.empty()){
         std::cerr<<"found no param"<<std::endl;
     }else{
@@ -148,7 +137,7 @@ std::vector<double> Scan_Analyser::interpolate_pose(double &time){
     return params;
 
 }
-void Scan_Analyser::read_MMS_trajectory(std::string path){//DONE confirmed right
+void Scan_Analyser::load_MMS_trajectory(std::string path){//DONE confirmed right
     std::ifstream inFile;
 
     inFile.open(path);
@@ -166,9 +155,10 @@ void Scan_Analyser::read_MMS_trajectory(std::string path){//DONE confirmed right
                 params.push_back(my_stod(*param_it));
             }
             //////////////////////////////////////////////////////////
-            time_t t = 1208667.232908 + gps2time(new gps_time_t {my_stod(*tmp.begin()),2035});
+            time_t t = gps2time(new gps_time_t {my_stod(*tmp.begin()),2037});
             //////////////////////////////////////////////////////////
             trajectories[t] = params;
+            time_stamps_mms.push_back(t);
         }
     }
     std::cout<<"finished load trajectory"<<std::endl;
@@ -176,8 +166,8 @@ void Scan_Analyser::read_MMS_trajectory(std::string path){//DONE confirmed right
 
 std::pair<double,double> Scan_Analyser::closest(std::vector<double> const& vec, double value) {
 
-    auto const it_before = std::lower_bound(vec.begin(), vec.end(), value);
-    auto const it_after = std::upper_bound(vec.begin(), vec.end(), value);
+    auto const it_before = std::lower_bound(vec.begin() + traj_idx, vec.end(), value);
+    auto const it_after = std::upper_bound(vec.begin() + traj_idx, vec.end(), value);
     if (it_before == vec.end() || it_after == vec.end() ) { return std::make_pair(-1.0,-1.0); }
     if (DEBUGGING){
         std::cout << "upper_bound at position " << (it_after - vec.begin()) << '\n';
@@ -186,6 +176,7 @@ std::pair<double,double> Scan_Analyser::closest(std::vector<double> const& vec, 
         std::cout<<"time wanted:"<<std::setprecision(15)<<value<<", ";
         std::cout<<"time_after found:" <<std::setprecision(15)<<*it_after<<std::endl;
     }
+    traj_idx = it_before - vec.begin();
     return std::make_pair(*(it_before - 1),*it_after);//////
 }
 
