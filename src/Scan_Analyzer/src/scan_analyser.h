@@ -27,8 +27,12 @@ public:
     ros::Subscriber velodyne_scan_sub;// for the pointcloud sub, no accurate time info from header.stamp.
     // @ref: http://docs.pointclouds.org/1.8.1/structpcl_1_1_p_c_l_header.html#a7ccf28ecce53332cd572d1ba982a4579
     ros::Subscriber raw_veloscan_sub; // used to get the time undirectly, rather than ros::Time::now();
+    ros::Subscriber vlp16_pc_sub;
     ros::Publisher transformed_pc_pub;
+    ros::Publisher marker_pub;
     pcl::PLYWriter writer;
+    tf::Matrix3x3 R_MMS2PLAT;
+    tf::Matrix3x3 R_BODY2GLO;
     std::vector<double> time_stamps_mms;
     //temperary use pcl
     ros::Time actual_timestamp; // get time from header of velodyneScan msg
@@ -47,6 +51,8 @@ public:
     double my_stod(std::string& s);
     std::pair<double,double> closest(std::vector<double> const& vec, double value);
     tf::Transform generate_tf_matrix(std::vector<double> &params);
+    void vlp_scancallback(const velodyne_rawdata::VPointCloud::ConstPtr& inMsg);
+    void generate_marker(std::vector<double> params);
     virtual ~Scan_Analyser();
 };
 

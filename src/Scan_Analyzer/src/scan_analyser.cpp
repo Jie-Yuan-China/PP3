@@ -23,11 +23,14 @@ extern "C" {
 #include "tf/transform_datatypes.h"
 #include "Eigen/Core"
 #include "Eigen/Geometry"
+#include <visualization_msgs/Marker.h>
 Scan_Analyser::Scan_Analyser(ros::NodeHandle nh)
 {   //diff time for debuging
-    time_t traj_start_time = gps2time(new gps_time_t {308729.418746,2037});
-    double time_diff_traj = 1548250178.232908 - traj_start_time;
+    time_t traj_start_time = gps2time(new gps_time_t {304919.057909,2037});
+    double time_diff_traj = 1548253275.908000 - traj_start_time;
     ROS_INFO("%f has passed since the measurement.",time_diff_traj);
+    R_MMS2PLAT = tf::Matrix3x3(1,0,0,0,-1,0,0,0,-1);
+    R_BODY2GLO = tf::Matrix3x3(0,1,0,1,0,0,0,0,-1);
 
     //load the traj data
     std::string path = "/home/jie/catkin_ws/data/trajectory_calenbergerneustadt.txt";
@@ -35,22 +38,54 @@ Scan_Analyser::Scan_Analyser(ros::NodeHandle nh)
     load_MMS_trajectory( path );
     // add the subscriber and publisher
     time_stamp_sub= nh.subscribe("/trigger_timestamps", 1, &Scan_Analyser::time_sync_callback,this);
-    velodyne_scan_sub = nh.subscribe("/velodyne_points",1,&Scan_Analyser::scanner_callback,this);
     transformed_pc_pub = nh.advertise<sensor_msgs::PointCloud2>("/velo_transformed",1);
 
+    //*************************************************************//
+    //************* please choose the velodyne scanner ************//
+    //*************************************************************//
+    velodyne_scan_sub = nh.subscribe("/velodyne_points",1,&Scan_Analyser::scanner_callback,this);
+
+//    vlp16_pc_sub = nh.subscribe("/velodyne_points",1, &Scan_Analyser::vlp_scancallback,this);
+    marker_pub = nh.advertise<visualization_msgs::Marker>("/traj_marker",1);
 }
 Scan_Analyser::~Scan_Analyser(){
 
 }
 
-void Scan_Analyser::scanner_callback(const velodyne_rawdata::VPointCloud::ConstPtr& inMsg){
-    if (!actual_timestamp.isZero() && !last_timestamp.isZero()){
-        ROS_INFO("start processing current cloud");
-        ros::Time begin_stamp = ros::Time::now();
+void Scan_Analyser::generate_marker(std::vector<double> params){
+    visualization_msgs::Marker marker;
+    marker.header.frame_id = "/velodyne";
+    marker.type = visualization_msgs::Marker::ARROW;
+    marker.ns = "basic_shapes";
+    marker.pose.position.x = params[0]- 550245.9876;
+    marker.pose.position.y = params[1]- 5800915.2169;
+    marker.pose.position.z = params[2]- 98.2715;
+    tf::Vector3 vec = generate_tf_matrix(params) * tf::Vector3(1,0,0);
 
+    marker.pose.orientation.x = vec.getX();
+    marker.pose.orientation.y = vec.getY();
+    marker.pose.orientation.z = vec.getZ();
+    marker.scale.x = 5.0;
+    marker.scale.y = 1.0;
+    marker.scale.z = 1.0;
+    marker.action = visualization_msgs::Marker::ADD;
+    marker.lifetime = ros::Duration();
+    marker.color.r = 0.0f;
+    marker.color.g = 1.0f;
+    marker.color.b = 0.0f;
+    marker.color.a = 1.0;
+    marker_pub.publish(marker);
+}
+void Scan_Analyser::vlp_scancallback(const velodyne_rawdata::VPointCloud::ConstPtr& inMsg){
+    actual_timestamp.fromSec(inMsg->header.stamp/1000000);
+    if (!last_timestamp.isZero()){
+        ros::Time begin_stamp = ros::Time::now();
         std::cout<<"size of points of this msg: "<<inMsg->points.size()<<std::endl;
         pcl::PointCloud<pcl::PointXYZI> current_cloud;
         std::map<uint16_t,tf::Transform> transform_map;
+        double t = actual_timestamp.toSec();
+        std::vector<double> actual_param = interpolate_pose(t);
+        generate_marker(actual_param);
         for(uint16_t i = 0; i < 36000; i++){
             double current_scan_time = last_timestamp.toSec() + i * (actual_timestamp.toSec()-last_timestamp.toSec())/36000;
             std::vector<double> params = interpolate_pose(current_scan_time);
@@ -58,7 +93,8 @@ void Scan_Analyser::scanner_callback(const velodyne_rawdata::VPointCloud::ConstP
             transform_map[i] = T;
         }
         for(auto pt:inMsg->points){
-            tf::Vector3 pt_transformed = transform_map[pt.azimuth] * tf::Vector3(pt.x,pt.y,pt.z);
+            tf::Vector3 pt_tmp = R_BODY2GLO * R_MMS2PLAT.inverse() * tf::Vector3(pt.x,pt.y,pt.z);
+            tf::Vector3 pt_transformed = transform_map[pt.azimuth] * pt_tmp;
             pcl::PointXYZI target_pt;
             target_pt.x = pt_transformed.getX();
             target_pt.y = pt_transformed.getY();
@@ -68,10 +104,60 @@ void Scan_Analyser::scanner_callback(const velodyne_rawdata::VPointCloud::ConstP
         }
         sensor_msgs::PointCloud2 output_msg;
         pcl::toROSMsg(current_cloud,output_msg);
-        output_msg.header.frame_id = "velodyne";
+        output_msg.header.frame_id = "/velodyne";
         transformed_pc_pub.publish(output_msg);
         ROS_INFO("//////Processing used %f seconds",ros::Time::now().toSec()-begin_stamp.toSec());
         if (writer.write("/home/jie/testsave.ply", current_cloud, false, false) != 0) {
+            ROS_ERROR("Something went wrong when trying to write the point cloud file.");
+            return;
+        }
+        ROS_INFO("####################Split line####################");
+    }
+    last_timestamp.fromSec(actual_timestamp.toSec());
+
+}
+void Scan_Analyser::scanner_callback(const velodyne_rawdata::VPointCloud::ConstPtr& inMsg){
+    if (!actual_timestamp.isZero() && !last_timestamp.isZero()){
+        ROS_INFO("start processing current cloud");
+        ros::Time begin_stamp = ros::Time::now();
+        std::clock_t begin_t, end_t;
+        std::cout<<"size of points of this msg: "<<inMsg->points.size()<<std::endl;
+        pcl::PointCloud<pcl::PointXYZI> current_cloud;
+        std::map<uint16_t,tf::Transform> transform_map;
+        double time_sum = 0.0;
+        double t = actual_timestamp.toSec();
+        std::vector<double> actual_param = interpolate_pose(t);
+        generate_marker(actual_param);
+        for(uint16_t i = 0; i < 36000; i++){
+
+            double current_scan_time = last_timestamp.toSec() + i * (actual_timestamp.toSec()-last_timestamp.toSec())/36000;
+            begin_t = clock();
+            std::vector<double> params = interpolate_pose(current_scan_time);
+            end_t = clock();
+            tf::Transform T = generate_tf_matrix(params);
+            transform_map[i] = T;
+            time_sum += (double)(end_t - begin_t)/CLOCKS_PER_SEC;
+        }
+
+        ROS_INFO("cost time %f", time_sum);
+        for(auto pt:inMsg->points){
+            tf::Vector3 pt_tmp = R_BODY2GLO * R_MMS2PLAT.inverse() * tf::Vector3(pt.x,pt.y,pt.z);
+            tf::Vector3 pt_transformed = transform_map[pt.azimuth] * pt_tmp;
+            pcl::PointXYZI target_pt;
+            target_pt.x = pt_transformed.getX();
+            target_pt.y = pt_transformed.getY();
+            target_pt.z = pt_transformed.getZ();
+            target_pt.intensity = pt.intensity;
+            current_cloud.push_back(target_pt);
+        }
+
+        sensor_msgs::PointCloud2 output_msg;
+        pcl::toROSMsg(current_cloud,output_msg);
+        output_msg.header.frame_id = "/velodyne";
+        transformed_pc_pub.publish(output_msg);
+        ROS_INFO("//////Processing used %f seconds",ros::Time::now().toSec()-begin_stamp.toSec());
+        std::string name = std::to_string((uint64_t)(t*1000000));
+        if (writer.write("/home/jie/catkin_ws/data/result/"+name+".ply", current_cloud, false, false) != 0) {
           ROS_ERROR("Something went wrong when trying to write the point cloud file.");
           return;
     }
@@ -115,6 +201,9 @@ std::vector<double> Scan_Analyser::interpolate_pose(double &time){
     double time_diff_before = time - time_pair.first;
     double time_diff_after = time_pair.second - time;
     double ratio = time_diff_before/(time_diff_after+time_diff_before);
+    if(time_diff_before < 0 || time_diff_after < 0 || ratio < 0){
+        ROS_INFO("TIME ERROR");
+    }
     if(DEBUGGING){
         ROS_INFO("Time difference should be %f",time_pair.second - time_pair.first);
     }
@@ -132,7 +221,6 @@ std::vector<double> Scan_Analyser::interpolate_pose(double &time){
         ROS_INFO("param_interpolated: %f",params.at(4));
         ROS_INFO("param_interpolated: %f",params.at(5));
         ROS_INFO("***********************");
-
     }
     return params;
 
@@ -166,18 +254,21 @@ void Scan_Analyser::load_MMS_trajectory(std::string path){//DONE confirmed right
 
 std::pair<double,double> Scan_Analyser::closest(std::vector<double> const& vec, double value) {
 
-    auto const it_before = std::lower_bound(vec.begin() + traj_idx, vec.end(), value);
-    auto const it_after = std::upper_bound(vec.begin() + traj_idx, vec.end(), value);
-    if (it_before == vec.end() || it_after == vec.end() ) { return std::make_pair(-1.0,-1.0); }
-    if (DEBUGGING){
-        std::cout << "upper_bound at position " << (it_after - vec.begin()) << '\n';
-        std::cout << "lower_bound at position " << (it_before- vec.begin() - 1) << '\n';
-        std::cout<<"time_before found:"<<std::setprecision(15)<<*(it_before - 1)<<", ";
-        std::cout<<"time wanted:"<<std::setprecision(15)<<value<<", ";
-        std::cout<<"time_after found:" <<std::setprecision(15)<<*it_after<<std::endl;
-    }
-    traj_idx = it_before - vec.begin();
-    return std::make_pair(*(it_before - 1),*it_after);//////
+//    auto const it_before = std::lower_bound(vec.begin() , vec.end(), value);
+    auto const it_after = std::upper_bound(vec.begin() , vec.end(), value);
+//    if ((it_before == vec.begin() ) || it_before == vec.end() ){
+//        ROS_ERROR("get the boundary");
+//    }
+//    if (it_before == vec.end() || it_after == vec.end() ) { return std::make_pair(-1.0,-1.0); }
+//    if (DEBUGGING){
+//        std::cout << "upper_bound at position " << (it_after - vec.begin()) << '\n';
+//        std::cout << "lower_bound at position " << (it_before- vec.begin() - 1) << '\n';
+//        std::cout<<"time_before found:"<<std::setprecision(15)<<*(it_before - 1)<<", ";
+//        std::cout<<"time wanted:"<<std::setprecision(15)<<value<<", ";
+//        std::cout<<"time_after found:" <<std::setprecision(15)<<*it_after<<std::endl;
+//    }
+//    traj_idx = it_before - vec.begin() - 1;
+    return std::make_pair(*(it_after - 1),*it_after);//////
 }
 
 double Scan_Analyser::my_stod(std::string& s)
@@ -218,12 +309,12 @@ tf::Transform Scan_Analyser::generate_tf_matrix(std::vector<double> &param){
     tf::Transform transmatrix = tf::Transform::getIdentity();
     tf::Quaternion quat = tf::Quaternion::getIdentity();
 
-    quat.setRPY(param[3] * M_PI / 180,param[4]* M_PI / 180,param[5]* M_PI / 180);
+    quat.setRPY(param[3] * M_PI / 180,param[4]* M_PI / 180,- param[5]* M_PI / 180);
     transmatrix.setRotation(quat);
     if (DEBUGGING){
-        transmatrix.setOrigin(tf::Vector3(param[0]- 544432.5269 ,param[1]- 5806532.7835 ,param[2]- 92.9471 ));
+        transmatrix.setOrigin(tf::Vector3(param[0]- 550245.9876 ,param[1]- 5800915.2169 ,param[2]- 98.2715 ));
     }else{
-        transmatrix.setOrigin(tf::Vector3(param[0]- 544432.5269,param[1]- 5806532.7835,param[2]- 92.9471));
+        transmatrix.setOrigin(tf::Vector3(param[0]- 550245.9876 ,param[1]- 5800915.2169 ,param[2]- 98.2715 ));
     }
 
     return transmatrix;
