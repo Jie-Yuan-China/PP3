@@ -6,6 +6,7 @@ PP3.3 Time sync using 2 velodyne laserscanners using ntp server by GPS receiver
 
 2. for 64E:
 rosrun nodelet nodelet standalone velodyne_pointcloud/CloudNodelet _calibration:=/home/jie/catkin_ws/src/velodyne/velodyne_pointcloud/params/64e_utexas.yaml 
+
 for VLP16:
 rosrun nodelet nodelet standalone velodyne_pointcloud/CloudNodelet _calibration:=/home/jie/catkin_ws/src/velodyne/velodyne_pointcloud/params/VLP16db.yaml 
 3. rosrun sync_velodyne_pcl sync_velodyne_pcl_node 
